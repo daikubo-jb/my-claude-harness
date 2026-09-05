@@ -5,7 +5,8 @@ disable-model-invocation: true
 ---
 
 現在の作業ディレクトリの basename をプロジェクト名として、
-`~/dev/doc-storage/<プロジェクト名>/` に規約どおりの構造を作る。
+doc-storage の配置ルート直下に規約どおりの構造を作る。
+ルートは `skill: doc-storage` を読んで確かめる。
 
 ```
 index.md

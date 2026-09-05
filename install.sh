@@ -2,6 +2,9 @@
 # このリポジトリを ~/.claude にリンクする。
 # マスターはこのリポジトリ。~/.claude 側は1ファイルずつのシンボリックリンクなので、
 # ここを編集すれば即座に全プロジェクトへ反映される。
+#
+# リンクは絶対パスで張る。リポジトリを別の場所へ移動したら再実行すること。
+# 移動しただけでリンクは全部切れ、ハーネスは無効になる。
 set -euo pipefail
 
 HARNESS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -68,11 +71,25 @@ backup_or_unlink "$TARGET/CLAUDE.md"
 ln -s "$HARNESS/CLAUDE.md" "$TARGET/CLAUDE.md"
 echo "linked: $TARGET/CLAUDE.md -> $HARNESS/CLAUDE.md"
 
+# doc-storage の配置ルートは skills/doc-storage/SKILL.md の1行だけが持つ。
+# ここでは表示のために読むだけで、書き換えはしない。
+DOC_ROOT_RAW="$(sed -n 's/^DOC_STORAGE_ROOT=//p' \
+  "$HARNESS/skills/doc-storage/SKILL.md" | head -1)"
+DOC_ROOT="${DOC_ROOT_RAW/#\~/$HOME}"
+
+if [[ -z "$DOC_ROOT" ]]; then
+  echo "警告: skills/doc-storage/SKILL.md から DOC_STORAGE_ROOT を読めませんでした" >&2
+elif [[ ! -d "$DOC_ROOT" ]]; then
+  echo
+  echo "doc-storage がまだありません: $DOC_ROOT"
+  echo "作るか、skills/doc-storage/SKILL.md の DOC_STORAGE_ROOT を書き換えてください。"
+fi
+
 cat <<MSG
 
 settings.json は自動で書き換えません。以下が入っているか確認してください:
 
-  "permissions": { "additionalDirectories": ["$HOME/dev/doc-storage"] },
+  "permissions": { "additionalDirectories": ["$DOC_ROOT"] },
   "env": {
     "CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS": "4",
     "CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH": "2",

@@ -13,9 +13,9 @@ $ARGUMENTS
 トレードオフ。当たり前のことは聞かない。本人がまだ考えていない、
 判断の分かれる部分を掘る。
 
-十分に埋まったら
-`~/dev/doc-storage/<プロジェクト名>/claude-doc/plans/YYYY-MM-DD-<slug>.md`
-に書き出す。書式は `skill: doc-storage`。
+十分に埋まったら doc-storage の
+`<プロジェクト名>/claude-doc/plans/YYYY-MM-DD-<slug>.md` に書き出す。
+配置ルートと書式は `skill: doc-storage`。
 
 仕様に必ず含めるもの:
 

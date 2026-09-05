@@ -1,18 +1,28 @@
 ---
 name: doc-storage
-description: dev配下プロジェクトのドキュメント配置規約。ドキュメントを作成・更新・検索するとき、doc-writer を使うとき、過去の設計判断や調査結果を探すときに読む。
+description: プロジェクトドキュメントの配置規約と保管場所。ドキュメントを作成・更新・検索するとき、doc-writer を使うとき、過去の設計判断や調査結果を探すときに読む。
 ---
 
 # doc-storage 配置規約
 
-すべてのプロジェクトドキュメントは `~/dev/doc-storage/` 以下に置く。
-プロジェクトのリポジトリ内には置かない（README や API ドキュメントなど、
-リポジトリに同梱すべきものは除く）。
+プロジェクトドキュメントはリポジトリ内に置かず、1箇所に集約する
+（README や API ドキュメントなど、リポジトリに同梱すべきものは除く）。
+
+## 配置ルート
+
+**このリポジトリで環境依存の設定はここ1行だけ。** 導入時に自分の環境に書き換える。
+
+```
+DOC_STORAGE_ROOT=~/dev/doc-storage
+```
+
+以降この値を `<root>` と書く。他のファイルはパスを直接書かず、
+`skill: doc-storage` を参照する。
 
 ## 構成
 
 ```
-~/dev/doc-storage/<プロジェクト名>/
+<root>/<プロジェクト名>/
 ├── index.md          ハブ。全ドキュメントへの wikilink を並べる
 ├── claude-doc/       Claude が書く
 │   ├── plans/        実装プランと plan-reviewer の指摘
@@ -23,7 +33,7 @@ description: dev配下プロジェクトのドキュメント配置規約。ド�
 └── human-doc/        人間が書く
 ```
 
-`<プロジェクト名>` は作業ディレクトリの basename（例: `~/dev/my-project` → `my-project`）。
+`<プロジェクト名>` は作業ディレクトリの basename（例: `/path/to/my-project` → `my-project`）。
 
 ## 対象外のプロジェクト
 
