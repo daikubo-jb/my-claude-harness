@@ -102,6 +102,18 @@ if [[ ! -d "$DOC_ROOT" ]]; then
   echo "作るか、skills/doc-storage/SKILL.md の DOC_STORAGE_ROOT を書き換えてください。"
 fi
 
+# 完了ゲートの許可リスト。無ければ雛形を置く（中身は空なので、この時点では
+# どのリポジトリでも verify-fast.sh は動かない）。既にあれば触らない。
+ALLOW="$TARGET/verify-gate-allow"
+if [[ ! -e "$ALLOW" ]]; then
+  cat > "$ALLOW" <<'ALLOWEOF'
+# 完了ゲート（hooks/verify-gate.sh）を効かせるディレクトリ。
+# 1行に1つ、絶対パスか ~/ 始まりで書く。書いたディレクトリとその配下が対象。
+# ここに無いリポジトリでは .claude/verify-fast.sh があっても実行しない。
+ALLOWEOF
+  echo "created: ${ALLOW}（空。使うリポジトリを1行ずつ足す）"
+fi
+
 # settings.json へのマージ。
 # ~/.claude/settings.json は Claude Code 自身と他のツールも書くので、リンクせず
 # 必要な2キーだけを足す。既存のキーとエントリは消さない。
@@ -119,8 +131,9 @@ if ! jq -e 'type == "object"' "$SETTINGS" >/dev/null 2>&1; then
 fi
 
 # プレースホルダの置換は jq でやる。パスに & や | が入っても壊れない。
-# deny: ハーネス由来の古い human-doc ルール（DOC_STORAGE_ROOT を変えた場合に残る）を
-#       外してから和集合を取る。それ以外の既存エントリには触らない。
+# deny: ハーネスが書いた形（Edit(<root>/*/human-doc/**)）だけを外してから和集合を取る。
+#       DOC_STORAGE_ROOT を変えたとき、旧パスのルールが残り続けるのを防ぐためで、
+#       ユーザーが自分で書いた human-doc 系のルールには触らない。
 # Stop: verify-gate.sh を指すコマンドだけを **グループの中の1本単位で** 外してから足す。
 #       グループごと落とすと、同じグループに同居する他の hook を巻き込む。
 MERGED="$(jq --argjson frag "$(cat "$FRAGMENT")" --arg root "$DENY_ROOT" '
@@ -128,7 +141,9 @@ MERGED="$(jq --argjson frag "$(cat "$FRAGMENT")" --arg root "$DENY_ROOT" '
   | .permissions = (
     (.permissions // {}) as $p
     | $p + { deny: (
-        ((($p.deny // []) | map(select(test("human-doc") | not))) + $deny) | unique
+        ((($p.deny // [])
+          | map(select(test("^Edit\\(.*/\\*/human-doc/\\*\\*\\)$") | not)))
+         + $deny) | unique
       ) }
   )
   | .hooks = (
@@ -180,4 +195,7 @@ settings.json のうち、以下は自動で書き換えません。入ってい
 
 メインモデルは固定しません。セッションごとに /model で選んでください
 （設計は opus / fable、実装は sonnet）。
+
+完了ゲートを使うリポジトリは $ALLOW に1行ずつ追加してください。
+空のままなら、どのリポジトリでも verify-fast.sh は実行されません。
 MSG

@@ -31,6 +31,18 @@ for f in skills/*/SKILL.md; do
   done
 done
 
+# 自分から起動できるか。ユーザーがコマンドを打たなくても回る前提が崩れていないこと
+model_invocable() { ! frontmatter "skills/$1/SKILL.md" | grep -qE '^disable-model-invocation:[[:space:]]*true'; }
+for sk in feature spec plan-review doc-storage; do
+  model_invocable "$sk"; check $? "$sk はモデルから起動できる"
+done
+for sk in harness-review doc-init doc; do
+  ! model_invocable "$sk"
+  check $? "$sk は人だけが起動する"
+done
+has_key skills/feature/SKILL.md when_to_use
+check $? "feature に when_to_use がある（過剰起動の歯止め）"
+
 section "2. agents の frontmatter"
 for f in agents/*.md; do
   for key in name description tools model; do
@@ -44,6 +56,17 @@ assert_fm agents/advisor.md      model  opus;   check $? "advisor は opus"
 assert_fm agents/plan-reviewer.md model fable;  check $? "plan-reviewer は fable"
 assert_fm agents/test-runner.md  effort medium; check $? "test-runner は effort: medium"
 assert_fm agents/doc-writer.md   model  haiku;  check $? "doc-writer は haiku"
+
+section "2b. CLAUDE.md が分岐条件を持っている"
+# feature を通らない依頼でも効くよう、条件は CLAUDE.md 側にある
+grep -q 'ゴールが明確でなければ実装を始めない' CLAUDE.md
+check $? "「ゴールが明確でなければ実装を始めない」がある"
+for word in 不変条件 plan-reviewer advisor /code-review; do
+  grep -q -- "$word" CLAUDE.md; check $? "分岐表に $word がある"
+done
+# 同じルールを feature と CLAUDE.md に重複させない
+! grep -q '異なる手で2回' skills/feature/SKILL.md
+check $? "feature が2回失敗ルールを重複して持っていない"
 
 section "3. settings-fragment.json"
 jq empty settings-fragment.json 2>/dev/null; check $? "有効な JSON"
@@ -102,14 +125,18 @@ rm -f "$REFLIST"
 
 section "6. 隔離した HOME で install.sh（2回流す）"
 FAKE_HOME="$(mktemp -d)"
-trap 'rm -rf "$FAKE_HOME" "${DUMMY_REPO:-}"' EXIT
+trap 'rm -rf "$FAKE_HOME" "${DUMMY_REPO:-}" "${GATE_HOME:-}"' EXIT
 mkdir -p "$FAKE_HOME/.claude"
 cat > "$FAKE_HOME/.claude/settings.json" <<'JSON'
 {
   "model": "opus[1m]",
   "permissions": {
     "additionalDirectories": ["/somewhere/doc-storage"],
-    "deny": ["Bash(pre-existing *)", "Edit(~/old-place/*/human-doc/**)"]
+    "deny": [
+      "Bash(pre-existing *)",
+      "Edit(~/old-place/*/human-doc/**)",
+      "Edit(/my/own/human-doc-notes/**)"
+    ]
   },
   "hooks": {
     "SessionStart": [{"hooks": [{"type": "command", "command": "orca-session-start"}]}],
@@ -152,11 +179,12 @@ jq -r '.permissions.deny[]' "$S" | grep -q 'pre-existing'
 check $? "既存の deny が残っている"
 
 # harness 由来の設定が入っている
-[[ "$(jq -r '.permissions.deny | length' "$S")" == 7 ]]
-check $? "deny が 1(既存) + 6(harness) = 7 件" "実際: $(jq -c '.permissions.deny' "$S")"
-jq -r '.permissions.deny[]' "$S" | grep -q 'old-place'
-[[ $? != 0 ]]
+[[ "$(jq -r '.permissions.deny | length' "$S")" == 8 ]]
+check $? "deny が 2(既存) + 6(harness) = 8 件" "実際: $(jq -c '.permissions.deny' "$S")"
+! jq -r '.permissions.deny[]' "$S" | grep -q 'old-place'
 check $? "ハーネス由来の古い human-doc ルールを外している"
+jq -r '.permissions.deny[]' "$S" | grep -q 'human-doc-notes'
+check $? "ユーザーが自分で書いた human-doc 系 deny は残す"
 [[ "$(jq -r '.permissions.deny[]' "$S" | grep -c '<DOC_STORAGE_ROOT>')" == 0 ]]
 check $? "deny にプレースホルダが残っていない"
 jq -r '.permissions.deny[]' "$S" | grep -q 'human-doc'
@@ -168,6 +196,10 @@ check $? "Stop hook は既存1 + harness1 = 2 件"
 # 同じグループに verify-gate と同居していた hook を巻き込んで消していないこと
 jq -e '[.hooks.Stop[] | select(.hooks != null) | .hooks[].command] | index("orca-stop")' "$S" >/dev/null 2>&1
 check $? "verify-gate と同居していた既存 hook を巻き込んでいない"
+[[ -f "$FAKE_HOME/.claude/verify-gate-allow" ]]
+check $? "許可リストの雛形を作っている"
+! grep -qvE '^[[:space:]]*(#.*)?$' "$FAKE_HOME/.claude/verify-gate-allow"
+check $? "雛形は空（既定ではどのリポジトリでも実行しない）"
 ls "$FAKE_HOME/.claude/"settings.json.bak.* >/dev/null 2>&1
 check $? "settings.json を退避している"
 [[ "$(ls -1 "$FAKE_HOME/.claude/"settings.json.bak.* 2>/dev/null | wc -l | tr -d ' ')" == 1 ]]
@@ -193,24 +225,46 @@ rm -rf "$BAD_HOME"
 section "7. verify-gate.sh の挙動"
 DUMMY_REPO="$(mktemp -d)"
 mkdir -p "$DUMMY_REPO/.claude"
+GATE_HOME="$(mktemp -d)"
+mkdir -p "$GATE_HOME/.claude"
 
 run_gate() { # $1=stop_hook_active $2=repo
   printf '{"hook_event_name":"Stop","stop_hook_active":%s,"cwd":"%s"}' "$1" "$2" \
-    | CLAUDE_PROJECT_DIR="$2" bash hooks/verify-gate.sh 2>"$DUMMY_REPO/stderr.log"
+    | HOME="$GATE_HOME" CLAUDE_PROJECT_DIR="$2" bash hooks/verify-gate.sh \
+      2>"$DUMMY_REPO/stderr.log"
   echo $?
 }
 
-# verify-fast.sh が無いリポジトリ
-[[ "$(run_gate false "$DUMMY_REPO")" == 0 ]]
-check $? "verify-fast.sh が無ければ exit 0"
-
-# 必ず落ちる verify-fast.sh
+# 必ず落ちる verify-fast.sh を置いたうえで、許可リストの効きを見る
 cat > "$DUMMY_REPO/.claude/verify-fast.sh" <<'X'
 #!/usr/bin/env bash
 echo "INTENTIONAL FAILURE MARKER"
 exit 1
 X
 chmod +x "$DUMMY_REPO/.claude/verify-fast.sh"
+
+# 許可リストそのものが無い
+[[ "$(run_gate false "$DUMMY_REPO")" == 0 ]]
+check $? "許可リストが無ければ実行しない（exit 0）"
+
+# 許可リストはあるが、このリポジトリは載っていない
+printf '# コメントだけ\n\n/somewhere/else\n' > "$GATE_HOME/.claude/verify-gate-allow"
+[[ "$(run_gate false "$DUMMY_REPO")" == 0 ]]
+check $? "許可リストに無いリポジトリでは実行しない（exit 0）"
+
+# 親ディレクトリを許可すると配下も対象になる
+printf '%s\n' "$(dirname "$DUMMY_REPO")" > "$GATE_HOME/.claude/verify-gate-allow"
+[[ "$(run_gate false "$DUMMY_REPO")" == 2 ]]
+check $? "親ディレクトリを許可すれば配下も対象"
+
+# 以降は自分自身を許可した状態で見る
+printf '%s\n' "$DUMMY_REPO" > "$GATE_HOME/.claude/verify-gate-allow"
+
+# verify-fast.sh が無いリポジトリ
+mv "$DUMMY_REPO/.claude/verify-fast.sh" "$DUMMY_REPO/.claude/verify-fast.sh.off"
+[[ "$(run_gate false "$DUMMY_REPO")" == 0 ]]
+check $? "verify-fast.sh が無ければ exit 0"
+mv "$DUMMY_REPO/.claude/verify-fast.sh.off" "$DUMMY_REPO/.claude/verify-fast.sh"
 
 [[ "$(run_gate false "$DUMMY_REPO")" == 2 ]]
 check $? "落ちる verify-fast.sh で exit 2"
@@ -221,7 +275,7 @@ check $? "stop_hook_active:true なら差し戻さない（exit 0）"
 
 # CLAUDE_PROJECT_DIR が無くても payload の cwd を見る
 printf '{"hook_event_name":"Stop","stop_hook_active":false,"cwd":"%s"}' "$DUMMY_REPO" \
-  | env -u CLAUDE_PROJECT_DIR bash hooks/verify-gate.sh >/dev/null 2>&1
+  | env -u CLAUDE_PROJECT_DIR HOME="$GATE_HOME" bash hooks/verify-gate.sh >/dev/null 2>&1
 [[ $? == 2 ]]
 check $? "CLAUDE_PROJECT_DIR が無ければ payload の cwd を使う"
 

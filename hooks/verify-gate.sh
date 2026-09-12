@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
 # Stop hook（完了ゲート）。
 #
-# 作業中のリポジトリに .claude/verify-fast.sh が実行可能な形であれば実行する。
-# 無ければ何もしない。落ちたら exit 2 で1回だけ差し戻す。
-# 差し戻しは1回まで。2回目（stop_hook_active）は止めずに人へ返す。
+# 許可したリポジトリでだけ、.claude/verify-fast.sh を実行する。
+# 落ちたら exit 2 で1回だけ差し戻す。2回目（stop_hook_active）は止めずに人へ返す。
+#
+# 許可リストは ~/.claude/verify-gate-allow。1行に1ディレクトリ、絶対パスか ~/ 始まり。
+# # 以降はコメント。書いたディレクトリとその配下が対象。
+# リストに無いリポジトリでは何もしない。Stop hook は permissions を通らないので、
+# これが無いと clone してきただけのリポジトリのスクリプトが動いてしまう。
 #
 # verify-fast.sh には数分で終わる検証だけを置くこと。
 # 重い検証はここではなく feature の手順の中で明示的に回す。
@@ -22,6 +26,24 @@ if [[ -z "$root" ]]; then
     | sed -n 's/.*"cwd"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
 fi
 [[ -n "$root" ]] || root="$PWD"
+root="$(cd "$root" 2>/dev/null && pwd -P)" || exit 0
+
+# 許可リストに載っているディレクトリ（とその配下）だけを対象にする。
+allow="${HOME}/.claude/verify-gate-allow"
+[[ -f "$allow" ]] || exit 0
+
+allowed=0
+while IFS= read -r line || [[ -n "$line" ]]; do
+  line="$(printf '%s' "$line" | sed 's/#.*//; s/^[[:space:]]*//; s/[[:space:]]*$//')"
+  [[ -n "$line" ]] || continue
+  entry="${line/#\~/$HOME}"
+  entry="$(cd "$entry" 2>/dev/null && pwd -P)" || continue
+  if [[ "$root" == "$entry" || "$root" == "$entry"/* ]]; then
+    allowed=1
+    break
+  fi
+done < "$allow"
+[[ "$allowed" == 1 ]] || exit 0
 
 script="$root/.claude/verify-fast.sh"
 [[ -x "$script" ]] || exit 0
