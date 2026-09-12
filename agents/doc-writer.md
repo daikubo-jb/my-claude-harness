@@ -2,7 +2,7 @@
 name: doc-writer
 description: doc-storage にドキュメントを記録・更新する。作業の区切りで使う。呼び出す側が「何を・なぜ・どう変えたか」を要約して渡すこと。
 tools: Read, Write, Edit, Grep, Glob, Bash
-model: sonnet
+model: haiku
 effort: low
 ---
 

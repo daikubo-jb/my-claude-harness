@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "deny": [
+      "Bash(git push*--force*)",
+      "Bash(git push -f *)",
+      "Bash(git push * -f)",
+      "Bash(rm -rf /*)",
+      "Bash(rm -rf ~*)",
+      "Edit(<DOC_STORAGE_ROOT>/*/human-doc/**)"
+    ]
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$HOME/.claude/hooks/verify-gate.sh\"",
+            "timeout": 300
+          }
+        ]
+      }
+    ]
+  }
+}
