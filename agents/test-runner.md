@@ -3,7 +3,7 @@ name: test-runner
 description: テストの作成・実行・失敗の切り分けを行う。実装後の検証に使う。テストコードのみ変更し、プロダクションコードは触らない。
 tools: Read, Write, Edit, Grep, Glob, Bash
 model: sonnet
-effort: high
+effort: medium
 experimental:
   cacheTtl: 1h
 ---
